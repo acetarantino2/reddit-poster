@@ -2,7 +2,7 @@
 
 Manage multiple OnlyFans creator profiles (models), each with their own list of subreddits to post to, title/body templates, and a last-posted tracker — all stored in `localStorage`, no backend required.
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/reddit-poster)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/acetarantino2/reddit-poster)
 
 ---
 
