@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Reddit Poster
 
-## Getting Started
+Manage multiple OnlyFans creator profiles (models), each with their own list of subreddits to post to, title/body templates, and a last-posted tracker — all stored in `localStorage`, no backend required.
 
-First, run the development server:
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/reddit-poster)
+
+---
+
+## Features
+
+- **Model management** — add, edit (name, colour, title/body template), and delete creator profiles
+- **Subreddit cards** — sorted by oldest `lastPosted` first; status dots (green / amber / red) show posting health
+- **One-click post** — opens `reddit.com/r/{subreddit}` in a new tab and stamps the timestamp instantly
+- **Copy title** — copies the rendered title template to your clipboard in one click
+- **Bulk add subreddits** — paste a list (one per line, with or without `r/`) and they're all added and deduplicated
+- **Dark / light mode** — class-based, persisted across sessions
+- **Fully responsive** — slide-in sidebar on mobile
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Styling | Tailwind CSS v4 |
+| Persistence | `localStorage` via custom hook |
+| Dates | `date-fns` |
+| IDs | `uuid` |
+| Toasts | `react-hot-toast` |
+
+## Getting started
 
 ```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start the dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploying to Vercel
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Click the button at the top of this README, or run:
 
-## Learn More
+```bash
+npx vercel
+```
 
-To learn more about Next.js, take a look at the following resources:
+No environment variables are required — the app is entirely client-side.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/
+  page.tsx          — root page & global state
+  layout.tsx        — HTML shell, fonts, metadata
+  globals.css       — Tailwind imports + dark-mode variant
+components/
+  Topbar.tsx        — header with dark/light toggle
+  Sidebar.tsx       — model list + Add Model button
+  MainPanel.tsx     — subreddit grid & empty states
+  SubredditCard.tsx — individual subreddit card
+  AddModelModal.tsx — create-model dialog
+  ModelDrawer.tsx   — edit model settings + bulk-add subreddits
+hooks/
+  useLocalStorage.ts — SSR-safe localStorage hook
+lib/
+  types.ts          — TypeScript interfaces
+  constants.ts      — colour palette & default templates
+```
