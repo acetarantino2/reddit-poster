@@ -41,8 +41,8 @@ export default function ImportBanner({ onImport }: ImportBannerProps) {
   };
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-3 bg-indigo-50 dark:bg-indigo-950/40 border-b border-indigo-200 dark:border-indigo-900 text-sm">
-      <p className="flex-1 text-indigo-900 dark:text-indigo-200">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-3 bg-raised border-b border-line text-[13.5px]">
+      <p className="flex-1">
         This browser has <strong>{legacy.length} model{legacy.length !== 1 ? 's' : ''}</strong> and{' '}
         <strong>{subCount} subreddit{subCount !== 1 ? 's' : ''}</strong> saved from the old version. Add them to the
         shared workspace so everyone can see them?
@@ -50,7 +50,7 @@ export default function ImportBanner({ onImport }: ImportBannerProps) {
       <div className="flex gap-2">
         <button
           onClick={markDone}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"
+          className="px-3 h-8 rounded-md text-[13px] text-muted hover:text-ink"
         >
           Dismiss
         </button>
@@ -60,7 +60,7 @@ export default function ImportBanner({ onImport }: ImportBannerProps) {
             markDone();
             toast.success('Imported into the shared workspace');
           }}
-          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white transition-colors"
+          className="px-3 h-8 rounded-md bg-ink text-panel text-[13px] font-medium hover:opacity-90"
         >
           Import
         </button>

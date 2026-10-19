@@ -8,16 +8,16 @@ Manage multiple OnlyFans creator profiles (models), each with their own list of 
 
 ## Features
 
-- **Model management** — add, edit (name, colour, title/body template), and delete creator profiles
-- **Subreddit cards** — sorted by oldest `lastPosted` first; status dots (green / amber / red) show posting health
-- **One-click post** — opens `reddit.com/r/{subreddit}` in a new tab and stamps the timestamp instantly
-- **Copy title** — copies the rendered title template to your clipboard in one click
-- **Bulk add subreddits** — paste a list (one per line, with or without `r/`) and they're all added and deduplicated
 - **Shared team workspace** — data lives in an Upstash Redis database; changes sync between everyone within seconds
 - **Team password login** — one password (`APP_PASSWORD`) for you and your staff
+- **Overview** — every model with subs ready to post, posts this week, removal rate and account problems, plus the latest posts
+- **Standard subreddit list** — new models start with it; push new additions to existing models with one click
+- **Subreddits per model** — sorted ready-first; notes and a verified-only flag per sub; search and filters
+- **Reddit accounts per model** — main, persona (with whose photos it uses) and verified accounts, each with a status (active / shadowbanned / suspended / retired) and stats
+- **Posting** — Post picks the right account (verified account for verified subs), opens the Reddit submit page and logs the post; undo if you didn't post
+- **Results** — paste the post link and the app checks upvotes, comments and removed status from Reddit; or enter it by hand
 - **Import from old version** — data saved in a browser by the old version can be imported with one click
-- **Dark / light mode** — class-based, persisted across sessions
-- **Fully responsive** — slide-in sidebar on mobile
+- **Dark / light mode**, works on phones
 
 ## Tech stack
 
