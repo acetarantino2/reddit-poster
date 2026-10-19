@@ -1,13 +1,29 @@
 'use client';
 
 import ThemeToggle from './ThemeToggle';
+import type { SyncState } from '@/hooks/useWorkspace';
 
 interface TopbarProps {
   onMenuToggle: () => void;
   sidebarOpen: boolean;
+  syncState: SyncState;
 }
 
-export default function Topbar({ onMenuToggle, sidebarOpen }: TopbarProps) {
+const SYNC_LABEL: Record<SyncState, { text: string; dot: string }> = {
+  loading: { text: 'Loading…', dot: 'bg-gray-400' },
+  synced: { text: 'Synced', dot: 'bg-green-500' },
+  saving: { text: 'Saving…', dot: 'bg-amber-400 animate-pulse' },
+  offline: { text: 'Offline — retrying', dot: 'bg-red-500' },
+};
+
+export default function Topbar({ onMenuToggle, sidebarOpen, syncState }: TopbarProps) {
+  const sync = SYNC_LABEL[syncState];
+
+  const logout = async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.reload();
+  };
+
   return (
     <header className="h-14 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex items-center justify-between px-4 z-30 flex-shrink-0">
       <div className="flex items-center gap-3">
@@ -25,7 +41,19 @@ export default function Topbar({ onMenuToggle, sidebarOpen }: TopbarProps) {
           <span className="font-semibold text-gray-900 dark:text-white text-sm">Reddit Poster</span>
         </div>
       </div>
-      <ThemeToggle />
+      <div className="flex items-center gap-2">
+        <span className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 mr-1" title="Changes are shared with everyone on the team">
+          <span className={`w-2 h-2 rounded-full ${sync.dot}`} />
+          {sync.text}
+        </span>
+        <ThemeToggle />
+        <button
+          onClick={logout}
+          className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white transition-colors"
+        >
+          Log out
+        </button>
+      </div>
     </header>
   );
 }

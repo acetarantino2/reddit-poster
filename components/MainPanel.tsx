@@ -6,11 +6,12 @@ import toast from 'react-hot-toast';
 
 interface MainPanelProps {
   model: Model | null;
-  onUpdateModel: (model: Model) => void;
+  onMarkPosted: (subredditId: string) => void;
+  onRemoveSubreddit: (modelId: string, subredditId: string) => void;
   onOpenSettings: () => void;
 }
 
-export default function MainPanel({ model, onUpdateModel, onOpenSettings }: MainPanelProps) {
+export default function MainPanel({ model, onMarkPosted, onRemoveSubreddit, onOpenSettings }: MainPanelProps) {
   if (!model) {
     return (
       <div className="flex-1 flex items-center justify-center p-8">
@@ -37,22 +38,12 @@ export default function MainPanel({ model, onUpdateModel, onOpenSettings }: Main
   });
 
   const handlePost = (subredditId: string) => {
-    const updated: Model = {
-      ...model,
-      subreddits: model.subreddits.map((s) =>
-        s.id === subredditId ? { ...s, lastPosted: new Date().toISOString() } : s
-      ),
-    };
-    onUpdateModel(updated);
+    onMarkPosted(subredditId);
   };
 
   const handleDeleteSubreddit = (subredditId: string) => {
     const sub = model.subreddits.find((s) => s.id === subredditId);
-    const updated: Model = {
-      ...model,
-      subreddits: model.subreddits.filter((s) => s.id !== subredditId),
-    };
-    onUpdateModel(updated);
+    onRemoveSubreddit(model.id, subredditId);
     toast.success(`Removed r/${sub?.name}`);
   };
 
