@@ -8,12 +8,13 @@ import toast from 'react-hot-toast';
 
 interface ModelDrawerProps {
   model: Model;
-  onUpdate: (model: Model) => void;
+  onSaveSettings: (model: Omit<Model, 'subreddits'>) => void;
+  onAddSubreddits: (modelId: string, subreddits: { id: string; name: string }[]) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }
 
-export default function ModelDrawer({ model, onUpdate, onDelete, onClose }: ModelDrawerProps) {
+export default function ModelDrawer({ model, onSaveSettings, onAddSubreddits, onDelete, onClose }: ModelDrawerProps) {
   const [name, setName] = useState(model.name);
   const [color, setColor] = useState(model.color);
   const [titleTemplate, setTitleTemplate] = useState(model.titleTemplate);
@@ -21,16 +22,18 @@ export default function ModelDrawer({ model, onUpdate, onDelete, onClose }: Mode
   const [bulkInput, setBulkInput] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Pick up changes a teammate saved, but only when the settings themselves changed
+  // (not on every sync), so typing isn't interrupted.
   useEffect(() => {
     setName(model.name);
     setColor(model.color);
     setTitleTemplate(model.titleTemplate);
     setBodyTemplate(model.bodyTemplate);
-  }, [model]);
+  }, [model.id, model.name, model.color, model.titleTemplate, model.bodyTemplate]);
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onUpdate({ ...model, name: name.trim(), color, titleTemplate, bodyTemplate });
+    onSaveSettings({ id: model.id, name: name.trim(), color, titleTemplate, bodyTemplate });
     toast.success('Model updated');
   };
 
@@ -48,14 +51,7 @@ export default function ModelDrawer({ model, onUpdate, onDelete, onClose }: Mode
       return;
     }
 
-    const updated: Model = {
-      ...model,
-      subreddits: [
-        ...model.subreddits,
-        ...newOnes.map((name) => ({ id: uuidv4(), name, lastPosted: null })),
-      ],
-    };
-    onUpdate(updated);
+    onAddSubreddits(model.id, newOnes.map((name) => ({ id: uuidv4(), name })));
     setBulkInput('');
     toast.success(`Added ${newOnes.length} subreddit${newOnes.length > 1 ? 's' : ''}`);
   };

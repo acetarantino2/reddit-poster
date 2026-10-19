@@ -1,6 +1,6 @@
 # Reddit Poster
 
-Manage multiple OnlyFans creator profiles (models), each with their own list of subreddits to post to, title/body templates, and a last-posted tracker — all stored in `localStorage`, no backend required.
+Manage multiple OnlyFans creator profiles (models), each with their own list of subreddits to post to, title/body templates, and a last-posted tracker. Everything is stored in a shared online database, so the whole team sees the same data on any browser or device.
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/acetarantino2/reddit-poster)
 
@@ -13,6 +13,9 @@ Manage multiple OnlyFans creator profiles (models), each with their own list of 
 - **One-click post** — opens `reddit.com/r/{subreddit}` in a new tab and stamps the timestamp instantly
 - **Copy title** — copies the rendered title template to your clipboard in one click
 - **Bulk add subreddits** — paste a list (one per line, with or without `r/`) and they're all added and deduplicated
+- **Shared team workspace** — data lives in an Upstash Redis database; changes sync between everyone within seconds
+- **Team password login** — one password (`APP_PASSWORD`) for you and your staff
+- **Import from old version** — data saved in a browser by the old version can be imported with one click
 - **Dark / light mode** — class-based, persisted across sessions
 - **Fully responsive** — slide-in sidebar on mobile
 
@@ -22,7 +25,8 @@ Manage multiple OnlyFans creator profiles (models), each with their own list of 
 |---|---|
 | Framework | Next.js 16 (App Router) |
 | Styling | Tailwind CSS v4 |
-| Persistence | `localStorage` via custom hook |
+| Persistence | Upstash Redis (via Vercel Storage) |
+| Auth | Shared password, signed HTTP-only cookie |
 | Dates | `date-fns` |
 | IDs | `uuid` |
 | Toasts | `react-hot-toast` |
@@ -37,7 +41,7 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). Locally, with no database configured, the app uses a temporary in-memory store and the password is `dev`.
 
 ## Deploying to Vercel
 
@@ -47,16 +51,26 @@ Click the button at the top of this README, or run:
 npx vercel
 ```
 
-No environment variables are required — the app is entirely client-side.
+### One-time setup
+
+1. **Database** — in the Vercel project open **Storage → Create Database → Upstash for Redis** (free plan is fine) and connect it to the project. This adds `KV_REST_API_URL` / `KV_REST_API_TOKEN` automatically.
+2. **Password** — in **Settings → Environment Variables** add `APP_PASSWORD` (the password your team will use). Changing it later logs everyone out.
+3. **Redeploy** the latest deployment.
+
+Until both are set, the live site shows a setup screen with these steps.
 
 ## Project structure
 
 ```
 app/
-  page.tsx          — root page & global state
+  page.tsx          — setup / login / app switch (server)
+  api/              — data, ops, login, logout routes
   layout.tsx        — HTML shell, fonts, metadata
   globals.css       — Tailwind imports + dark-mode variant
 components/
+  App.tsx           — main app & state
+  LoginScreen.tsx   — team password screen
+  ImportBanner.tsx  — import data from the old per-browser version
   Topbar.tsx        — header with dark/light toggle
   Sidebar.tsx       — model list + Add Model button
   MainPanel.tsx     — subreddit grid & empty states
@@ -64,8 +78,11 @@ components/
   AddModelModal.tsx — create-model dialog
   ModelDrawer.tsx   — edit model settings + bulk-add subreddits
 hooks/
-  useLocalStorage.ts — SSR-safe localStorage hook
+  useWorkspace.ts   — syncs with the server (optimistic updates + polling)
 lib/
+  store.ts          — database layout & operations (server)
+  auth.ts           — password + session cookie (server)
+  ops.ts            — change operations shared by client & server
   types.ts          — TypeScript interfaces
   constants.ts      — colour palette & default templates
 ```
