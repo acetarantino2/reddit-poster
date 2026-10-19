@@ -1,27 +1,36 @@
 import 'server-only';
 import { Redis } from '@upstash/redis';
-import { AppData, Model } from './types';
+import { AppData, Model, Post, PostStats, RedditAccount, StandardSub } from './types';
 import type { Op } from './ops';
 
 /**
  * Shared storage for the whole team.
  *
- * Layout (Redis hashes, so concurrent edits by different people don't overwrite each other):
- *   rp:models          modelId  -> JSON { id, name, color, titleTemplate, bodyTemplate, createdAt }
- *   rp:subs:{modelId}  subId    -> JSON { name, addedAt }
- *   rp:posted          subId    -> ISO timestamp of last post
+ * Layout (Redis hashes, so simultaneous edits by different people don't overwrite each other):
+ *   rp:models              modelId -> JSON { id, name, color, titleTemplate, bodyTemplate, createdAt }
+ *   rp:subs:{modelId}      subId   -> JSON { name, addedAt, verified?, notes? }
+ *   rp:accounts:{modelId}  accId   -> JSON RedditAccount + addedAt
+ *   rp:posts               postId  -> JSON Post
+ *   rp:standard            id      -> JSON { name, verified?, addedAt }
+ *   rp:posted              subId   -> ISO time (older "last posted" stamps from before the post log)
  */
 
 const MODELS = 'rp:models';
 const POSTED = 'rp:posted';
+const POSTS = 'rp:posts';
+const STANDARD = 'rp:standard';
 const subsKey = (modelId: string) => `rp:subs:${modelId}`;
+const accountsKey = (modelId: string) => `rp:accounts:${modelId}`;
 
-type StoredModel = Omit<Model, 'subreddits'> & { createdAt?: string };
-type StoredSub = { name: string; addedAt: string };
+type StoredModel = Pick<Model, 'id' | 'name' | 'color' | 'titleTemplate' | 'bodyTemplate'> & { createdAt?: string };
+type StoredSub = { name: string; addedAt: string; verified?: boolean; notes?: string };
+type StoredAccount = RedditAccount & { addedAt?: string };
+type StoredStandard = { name: string; addedAt: string; verified?: boolean };
 
-/** Minimal hash interface so we can swap in an in-memory store for local dev. */
+/** Minimal hash interface so an in-memory store can stand in for local dev. */
 interface HashStore {
   hgetall(key: string): Promise<Record<string, unknown> | null>;
+  hget(key: string, field: string): Promise<unknown>;
   hset(key: string, values: Record<string, string>): Promise<unknown>;
   hdel(key: string, ...fields: string[]): Promise<unknown>;
   del(key: string): Promise<unknown>;
@@ -32,6 +41,9 @@ class MemoryStore implements HashStore {
   async hgetall(key: string) {
     const h = this.data.get(key);
     return h && h.size ? Object.fromEntries(h) : null;
+  }
+  async hget(key: string, field: string) {
+    return this.data.get(key)?.get(field) ?? null;
   }
   async hset(key: string, values: Record<string, string>) {
     const h = this.data.get(key) ?? new Map<string, string>();
@@ -75,22 +87,53 @@ function getStore(): HashStore {
 function parse<T>(v: unknown): T {
   return (typeof v === 'string' ? JSON.parse(v) : v) as T;
 }
+const entries = <T>(raw: Record<string, unknown> | null) =>
+  Object.entries(raw ?? {}).map(([id, v]) => ({ id, ...parse<T>(v) }));
+const byAdded = (a: { addedAt?: string }, b: { addedAt?: string }) => (a.addedAt ?? '').localeCompare(b.addedAt ?? '');
+const stamp = (i = 0) => new Date(Date.now() + i).toISOString();
 
 export async function loadAll(): Promise<AppData> {
   const db = getStore();
-  const [modelsRaw, postedRaw] = await Promise.all([db.hgetall(MODELS), db.hgetall(POSTED)]);
-  const posted = (postedRaw ?? {}) as Record<string, string>;
+  const [modelsRaw, postedRaw, postsRaw, standardRaw] = await Promise.all([
+    db.hgetall(MODELS),
+    db.hgetall(POSTED),
+    db.hgetall(POSTS),
+    db.hgetall(STANDARD),
+  ]);
+
+  const posts = Object.values(postsRaw ?? {})
+    .map((v) => parse<Post>(v))
+    .sort((a, b) => b.postedAt.localeCompare(a.postedAt));
+
+  // last posted per subreddit = newest of the post log and any older stamp
+  const latest: Record<string, string> = {};
+  for (const [id, v] of Object.entries(postedRaw ?? {})) latest[id] = String(v);
+  for (const p of posts) if (!latest[p.subredditId] || p.postedAt > latest[p.subredditId]) latest[p.subredditId] = p.postedAt;
+
   const stored = Object.values(modelsRaw ?? {})
     .map((v) => parse<StoredModel>(v))
     .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''));
 
   const models: Model[] = await Promise.all(
     stored.map(async (m) => {
-      const subsRaw = (await db.hgetall(subsKey(m.id))) ?? {};
-      const subreddits = Object.entries(subsRaw)
-        .map(([id, v]) => ({ id, ...parse<StoredSub>(v) }))
-        .sort((a, b) => a.addedAt.localeCompare(b.addedAt))
-        .map((s) => ({ id: s.id, name: s.name, lastPosted: posted[s.id] ? String(posted[s.id]) : null }));
+      const [subsRaw, accountsRaw] = await Promise.all([db.hgetall(subsKey(m.id)), db.hgetall(accountsKey(m.id))]);
+      const subreddits = entries<StoredSub>(subsRaw)
+        .sort(byAdded)
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          lastPosted: latest[s.id] ?? null,
+          ...(s.verified ? { verified: true } : {}),
+          ...(s.notes ? { notes: s.notes } : {}),
+        }));
+      const accounts = Object.values(accountsRaw ?? {})
+        .map((v) => parse<StoredAccount>(v))
+        .sort(byAdded)
+        .map((a) => {
+          const copy: RedditAccount & { addedAt?: string } = { ...a };
+          delete copy.addedAt;
+          return copy as RedditAccount;
+        });
       return {
         id: m.id,
         name: m.name,
@@ -98,18 +141,54 @@ export async function loadAll(): Promise<AppData> {
         titleTemplate: m.titleTemplate,
         bodyTemplate: m.bodyTemplate,
         subreddits,
+        accounts,
       };
     })
   );
 
-  return { models };
+  const standard: StandardSub[] = entries<StoredStandard>(standardRaw)
+    .sort(byAdded)
+    .map((s) => ({ id: s.id, name: s.name, ...(s.verified ? { verified: true } : {}) }));
+
+  return { models, posts, standard };
 }
 
-// ---- Operations -----------------------------------------------------------
+// ---- Validation -----------------------------------------------------------
 
 export type { Op };
 
 const isStr = (v: unknown, max = 2000): v is string => typeof v === 'string' && v.length <= max;
+const optStr = (v: unknown, max = 2000) => v === undefined || isStr(v, max);
+const optBool = (v: unknown) => v === undefined || typeof v === 'boolean';
+const isId = (v: unknown) => isStr(v, 64) && (v as string).length > 0;
+const isDate = (v: unknown) => isStr(v, 40) && !isNaN(Date.parse(v as string));
+const isSubName = (v: unknown) => isStr(v, 50) && /^[A-Za-z0-9_]+$/.test(v as string);
+const ROLES = ['main', 'persona', 'verified'];
+const STATUSES = ['active', 'shadowbanned', 'suspended', 'retired'];
+const STATES = ['live', 'removed', 'deleted', 'unknown'];
+
+function validAccount(a: unknown): a is RedditAccount {
+  const o = a as Record<string, unknown>;
+  return !!o && isId(o.id) && isStr(o.username, 40) && ROLES.includes(o.role as string) &&
+    STATUSES.includes(o.status as string) && optStr(o.persona, 100) && optStr(o.notes, 2000);
+}
+function validStats(s: unknown): s is PostStats {
+  const o = s as Record<string, unknown>;
+  const num = (v: unknown) => v === null || (typeof v === 'number' && Number.isFinite(v));
+  return !!o && num(o.score) && num(o.comments) && STATES.includes(o.state as string) && isDate(o.checkedAt) && optBool(o.manual);
+}
+function validUrl(u: unknown) {
+  return u === undefined || u === '' || (isStr(u, 500) && /^https?:\/\//i.test(u as string));
+}
+function validPost(p: unknown): p is Post {
+  const o = p as Record<string, unknown>;
+  return !!o && isId(o.id) && isId(o.modelId) && isId(o.subredditId) && isSubName(o.subreddit) &&
+    (o.accountId === null || isId(o.accountId)) && isDate(o.postedAt) && validUrl(o.url) &&
+    (o.stats === undefined || validStats(o.stats));
+}
+const validNewSubs = (list: unknown, max = 1000) =>
+  Array.isArray(list) && list.length <= max &&
+  list.every((s) => s && isId(s.id) && isSubName(s.name) && optBool(s.verified));
 
 export function validateOp(op: unknown): op is Op {
   if (!op || typeof op !== 'object') return false;
@@ -117,17 +196,38 @@ export function validateOp(op: unknown): op is Op {
   switch (o.type) {
     case 'upsertModel': {
       const m = o.model as Record<string, unknown>;
-      return !!m && isStr(m.id, 64) && isStr(m.name, 200) && isStr(m.color, 32) && isStr(m.titleTemplate) && isStr(m.bodyTemplate, 10000);
+      return !!m && isId(m.id) && isStr(m.name, 200) && isStr(m.color, 32) && isStr(m.titleTemplate) && isStr(m.bodyTemplate, 10000);
     }
     case 'deleteModel':
-      return isStr(o.modelId, 64);
+      return isId(o.modelId);
     case 'addSubreddits':
-      return isStr(o.modelId, 64) && Array.isArray(o.subreddits) && o.subreddits.length <= 1000 &&
-        o.subreddits.every((s) => s && isStr(s.id, 64) && isStr(s.name, 100));
+      return isId(o.modelId) && validNewSubs(o.subreddits);
+    case 'updateSubreddit': {
+      const p = o.patch as Record<string, unknown>;
+      return isId(o.modelId) && isId(o.subredditId) && !!p && optBool(p.verified) && optStr(p.notes, 2000);
+    }
     case 'removeSubreddit':
-      return isStr(o.modelId, 64) && isStr(o.subredditId, 64);
-    case 'markPosted':
-      return isStr(o.subredditId, 64) && isStr(o.at, 40) && !isNaN(Date.parse(o.at as string));
+      return isId(o.modelId) && isId(o.subredditId);
+    case 'upsertAccount':
+      return isId(o.modelId) && validAccount(o.account);
+    case 'deleteAccount':
+      return isId(o.modelId) && isId(o.accountId);
+    case 'logPost':
+      return validPost(o.post);
+    case 'updatePost': {
+      const p = o.patch as Record<string, unknown>;
+      return isId(o.postId) && !!p && validUrl(p.url) &&
+        (p.accountId === undefined || p.accountId === null || isId(p.accountId)) &&
+        (p.stats === undefined || validStats(p.stats));
+    }
+    case 'deletePost':
+      return isId(o.postId);
+    case 'addStandard':
+      return validNewSubs(o.subreddits);
+    case 'updateStandard':
+      return isId(o.id) && typeof o.verified === 'boolean';
+    case 'removeStandard':
+      return isId(o.id);
     case 'import':
       return Array.isArray(o.models) && o.models.length <= 500;
     default:
@@ -135,24 +235,31 @@ export function validateOp(op: unknown): op is Op {
   }
 }
 
+// ---- Operations -----------------------------------------------------------
+
 export async function applyOp(op: Op): Promise<void> {
   const db = getStore();
   const now = new Date().toISOString();
 
   switch (op.type) {
     case 'upsertModel': {
-      const existing = await db.hgetall(MODELS);
-      const prev = existing?.[op.model.id] ? parse<StoredModel>(existing[op.model.id]) : null;
+      const prevRaw = await db.hget(MODELS, op.model.id);
+      const prev = prevRaw ? parse<StoredModel>(prevRaw) : null;
       const { id, name, color, titleTemplate, bodyTemplate } = op.model;
       const value: StoredModel = { id, name, color, titleTemplate, bodyTemplate, createdAt: prev?.createdAt ?? now };
       await db.hset(MODELS, { [id]: JSON.stringify(value) });
       return;
     }
     case 'deleteModel': {
-      const subs = await db.hgetall(subsKey(op.modelId));
+      const [subs, posts] = await Promise.all([db.hgetall(subsKey(op.modelId)), db.hgetall(POSTS)]);
       const subIds = Object.keys(subs ?? {});
       if (subIds.length) await db.hdel(POSTED, ...subIds);
-      await db.del(subsKey(op.modelId));
+      const postIds = Object.values(posts ?? {})
+        .map((v) => parse<Post>(v))
+        .filter((p) => p.modelId === op.modelId)
+        .map((p) => p.id);
+      if (postIds.length) await db.hdel(POSTS, ...postIds);
+      await Promise.all([db.del(subsKey(op.modelId)), db.del(accountsKey(op.modelId))]);
       await db.hdel(MODELS, op.modelId);
       return;
     }
@@ -160,11 +267,19 @@ export async function applyOp(op: Op): Promise<void> {
       if (!op.subreddits.length) return;
       const values: Record<string, string> = {};
       op.subreddits.forEach((s, i) => {
-        // keep insertion order stable within a batch
-        const addedAt = new Date(Date.now() + i).toISOString();
-        values[s.id] = JSON.stringify({ name: s.name, addedAt } satisfies StoredSub);
+        const v: StoredSub = { name: s.name, addedAt: stamp(i), ...(s.verified ? { verified: true } : {}) };
+        values[s.id] = JSON.stringify(v);
       });
       await db.hset(subsKey(op.modelId), values);
+      return;
+    }
+    case 'updateSubreddit': {
+      const raw = await db.hget(subsKey(op.modelId), op.subredditId);
+      if (!raw) return;
+      const next: StoredSub = { ...parse<StoredSub>(raw), ...op.patch };
+      if (!next.verified) delete next.verified;
+      if (!next.notes) delete next.notes;
+      await db.hset(subsKey(op.modelId), { [op.subredditId]: JSON.stringify(next) });
       return;
     }
     case 'removeSubreddit': {
@@ -172,12 +287,71 @@ export async function applyOp(op: Op): Promise<void> {
       await db.hdel(POSTED, op.subredditId);
       return;
     }
-    case 'markPosted': {
-      await db.hset(POSTED, { [op.subredditId]: op.at });
+    case 'upsertAccount': {
+      const raw = await db.hget(accountsKey(op.modelId), op.account.id);
+      const addedAt = raw ? parse<StoredAccount>(raw).addedAt ?? now : now;
+      const { id, username, role, status, persona, notes } = op.account;
+      const v: StoredAccount = {
+        id, username: username.replace(/^\/?u\//i, '').trim(), role, status, addedAt,
+        ...(persona ? { persona } : {}), ...(notes ? { notes } : {}),
+      };
+      await db.hset(accountsKey(op.modelId), { [id]: JSON.stringify(v) });
+      return;
+    }
+    case 'deleteAccount': {
+      await db.hdel(accountsKey(op.modelId), op.accountId);
+      return;
+    }
+    case 'logPost': {
+      const { id, modelId, subredditId, subreddit, accountId, postedAt, url, stats } = op.post;
+      const p: Post = { id, modelId, subredditId, subreddit, accountId, postedAt, ...(url ? { url } : {}), ...(stats ? { stats } : {}) };
+      await db.hset(POSTS, { [id]: JSON.stringify(p) });
+      return;
+    }
+    case 'updatePost': {
+      const raw = await db.hget(POSTS, op.postId);
+      if (!raw) return;
+      const next: Post = { ...parse<Post>(raw) };
+      if (op.patch.url !== undefined) {
+        if (op.patch.url) next.url = op.patch.url;
+        else delete next.url;
+      }
+      if (op.patch.accountId !== undefined) next.accountId = op.patch.accountId;
+      if (op.patch.stats !== undefined) next.stats = op.patch.stats;
+      await db.hset(POSTS, { [op.postId]: JSON.stringify(next) });
+      return;
+    }
+    case 'deletePost': {
+      await db.hdel(POSTS, op.postId);
+      return;
+    }
+    case 'addStandard': {
+      const current = entries<StoredStandard>(await db.hgetall(STANDARD));
+      const have = new Set(current.map((s) => s.name.toLowerCase()));
+      const values: Record<string, string> = {};
+      op.subreddits.forEach((s, i) => {
+        if (have.has(s.name.toLowerCase())) return;
+        have.add(s.name.toLowerCase());
+        values[s.id] = JSON.stringify({ name: s.name, addedAt: stamp(i), ...(s.verified ? { verified: true } : {}) });
+      });
+      if (Object.keys(values).length) await db.hset(STANDARD, values);
+      return;
+    }
+    case 'updateStandard': {
+      const raw = await db.hget(STANDARD, op.id);
+      if (!raw) return;
+      const next: StoredStandard = { ...parse<StoredStandard>(raw) };
+      if (op.verified) next.verified = true;
+      else delete next.verified;
+      await db.hset(STANDARD, { [op.id]: JSON.stringify(next) });
+      return;
+    }
+    case 'removeStandard': {
+      await db.hdel(STANDARD, op.id);
       return;
     }
     case 'import': {
-      // Merge a browser's old localStorage data into the shared store.
+      // Merge a browser's old saved data into the shared store.
       // Existing models (same id) keep their settings; subreddits are merged by name;
       // the most recent "last posted" time wins.
       const current = await loadAll();
@@ -185,7 +359,7 @@ export async function applyOp(op: Op): Promise<void> {
       const posted: Record<string, string> = {};
 
       for (const raw of op.models) {
-        if (!raw || !isStr(raw.id, 64) || !isStr(raw.name, 200)) continue;
+        if (!raw || !isId(raw.id) || !isStr(raw.name, 200)) continue;
         const existing = byId.get(raw.id);
         if (!existing) {
           const value: StoredModel = {
@@ -201,11 +375,11 @@ export async function applyOp(op: Op): Promise<void> {
         const existingByName = new Map((existing?.subreddits ?? []).map((s) => [s.name.toLowerCase(), s]));
         const newSubs: Record<string, string> = {};
         (Array.isArray(raw.subreddits) ? raw.subreddits : []).forEach((s, i) => {
-          if (!s || !isStr(s.id, 64) || !isStr(s.name, 100)) return;
+          if (!s || !isId(s.id) || !isSubName(s.name)) return;
           const match = existingByName.get(s.name.toLowerCase());
           const targetId = match ? match.id : s.id;
           if (!match) {
-            newSubs[s.id] = JSON.stringify({ name: s.name, addedAt: new Date(Date.now() + i).toISOString() });
+            newSubs[s.id] = JSON.stringify({ name: s.name, addedAt: stamp(i) } satisfies StoredSub);
             existingByName.set(s.name.toLowerCase(), { id: s.id, name: s.name, lastPosted: null });
           }
           if (s.lastPosted && !isNaN(Date.parse(s.lastPosted))) {

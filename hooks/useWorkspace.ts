@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { AppData } from '@/lib/types';
+import { AppData, EMPTY_DATA } from '@/lib/types';
 import { Op, applyLocal } from '@/lib/ops';
 
 const POLL_MS = 10_000;
@@ -16,7 +16,7 @@ export type SyncState = 'loading' | 'synced' | 'saving' | 'offline';
  *   so what a teammate does shows up without refreshing.
  */
 export function useWorkspace() {
-  const [data, setData] = useState<AppData>({ models: [] });
+  const [data, setData] = useState<AppData>(EMPTY_DATA);
   const [state, setState] = useState<SyncState>('loading');
   const queue = useRef<Op[]>([]);
   const flushing = useRef(false);
@@ -34,7 +34,7 @@ export function useWorkspace() {
       const res = await fetch('/api/data', { cache: 'no-store' });
       if (res.status === 401) return handleUnauthorized();
       if (!res.ok) throw new Error(String(res.status));
-      const fresh = (await res.json()) as AppData;
+      const fresh = { ...EMPTY_DATA, ...((await res.json()) as AppData) };
       // Ignore stale responses, or ones that started before an unsaved local change.
       if (seq !== fetchSeq.current || queue.current.length || startedAt < lastLocalChange.current) return;
       setData(fresh);

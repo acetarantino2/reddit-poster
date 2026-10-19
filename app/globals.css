@@ -1,8 +1,93 @@
 @import "tailwindcss";
 
+/*
+ * Colour tokens. Graphite base; each model's own colour is the accent on its pages
+ * (set as --model on the page wrapper).
+ */
+:root {
+  --bg: #eef0f4;
+  --panel: #ffffff;
+  --raised: #f5f6f9;
+  --line: #dde1e8;
+  --line-strong: #c9ced8;
+  --ink: #161a23;
+  --muted: #5f6878;
+  --faint: #8f97a6;
+  --ok: #1f9d63;
+  --warn: #b7791f;
+  --bad: #d64545;
+  --model: #6b7a99;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #121620;
+  --panel: #181d29;
+  --raised: #1f2533;
+  --line: #283042;
+  --line-strong: #364056;
+  --ink: #e8ebf1;
+  --muted: #8a93a6;
+  --faint: #5f687b;
+  --ok: #4cc38a;
+  --warn: #e8b34b;
+  --bad: #ef6a6a;
+  color-scheme: dark;
+}
+
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-model: var(--model);
 }
 
 @variant dark (&:where(.dark, .dark *));
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Condensed display cut of Instrument Sans for model names */
+.display {
+  font-stretch: 78%;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.02;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--model);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

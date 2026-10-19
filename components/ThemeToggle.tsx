@@ -1,38 +1,42 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
+
+const subscribe = (cb: () => void) => {
+  const obs = new MutationObserver(cb);
+  obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  return () => obs.disconnect();
+};
+const isDarkNow = () => document.documentElement.classList.contains('dark');
 
 export default function ThemeToggle() {
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    const stored = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const dark = stored ? stored === 'dark' : prefersDark;
-    setIsDark(dark);
-    document.documentElement.classList.toggle('dark', dark);
-  }, []);
+  const dark = useSyncExternalStore(subscribe, isDarkNow, () => true);
 
   const toggle = () => {
-    const next = !isDark;
-    setIsDark(next);
+    const next = !dark;
     document.documentElement.classList.toggle('dark', next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
+    try {
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+    } catch {}
   };
 
   return (
     <button
       onClick={toggle}
-      className="relative inline-flex h-7 w-13 items-center rounded-full bg-gray-200 dark:bg-gray-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
-      aria-label="Toggle dark mode"
+      className="p-1.5 rounded-md text-muted hover:text-ink hover:bg-raised"
+      aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={dark ? 'Light mode' : 'Dark mode'}
     >
-      <span
-        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
-          isDark ? 'translate-x-7' : 'translate-x-1'
-        }`}
-      />
-      <span className="absolute left-1.5 text-[10px]">☀️</span>
-      <span className="absolute right-1.5 text-[10px]">🌙</span>
+      {dark ? (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="8" cy="8" r="3" />
+          <path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1" />
+        </svg>
+      ) : (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M13.5 9.5A5.5 5.5 0 016.5 2.5a5.5 5.5 0 107 7z" />
+        </svg>
+      )}
     </button>
   );
 }

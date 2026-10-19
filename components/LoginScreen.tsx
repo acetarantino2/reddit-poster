@@ -39,31 +39,30 @@ export default function LoginScreen() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen flex items-center justify-center p-4">
       <form
         method="post"
         action="/api/login"
         onSubmit={submit}
-        className="w-full max-w-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-sm p-6 space-y-4"
+        className="w-full max-w-sm bg-panel border border-line rounded-xl p-7 space-y-5"
       >
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center text-white text-sm font-bold">R</div>
-          <h1 className="font-semibold text-gray-900 dark:text-white">Reddit Poster</h1>
+        <div>
+          <h1 className="display text-[34px]">Reddit Poster</h1>
+          <p className="mt-2 text-muted">Enter the team password to open the shared workspace.</p>
         </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400">Enter the team password to open the shared workspace.</p>
         <input
           type="password"
           autoFocus
           autoComplete="current-password"
           name="password"
           placeholder="Password"
-          className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          className="w-full h-10 px-3 rounded-md border border-line-strong bg-panel text-ink placeholder:text-faint focus:outline-none focus:border-ink focus:ring-2 focus:ring-ink/15"
         />
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="text-[13px] text-bad">{error}</p>}
         <button
           type="submit"
           disabled={busy}
-          className="w-full py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium text-white transition-colors"
+          className="w-full h-10 rounded-md bg-ink text-panel font-medium hover:opacity-90 disabled:opacity-50"
         >
           {busy ? 'Checking…' : 'Log in'}
         </button>

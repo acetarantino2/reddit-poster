@@ -1,96 +1,114 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { Model } from '@/lib/types';
 import { useWorkspace } from '@/hooks/useWorkspace';
-import Topbar from '@/components/Topbar';
-import Sidebar from '@/components/Sidebar';
-import MainPanel from '@/components/MainPanel';
+import Sidebar, { View } from '@/components/Sidebar';
 import AddModelModal from '@/components/AddModelModal';
-import ModelDrawer from '@/components/ModelDrawer';
 import ImportBanner from '@/components/ImportBanner';
+import ModelView from '@/components/ModelView';
+import StandardView from '@/components/StandardView';
+import Overview from '@/components/Overview';
+
+// The current page lives in the URL hash so back/forward and refresh work.
+function readHash(): View {
+  if (typeof window === 'undefined') return { kind: 'overview' };
+  const h = window.location.hash;
+  if (h.startsWith('#/m/')) return { kind: 'model', id: decodeURIComponent(h.slice(4)) };
+  if (h === '#/standard') return { kind: 'standard' };
+  return { kind: 'overview' };
+}
+const toHash = (v: View) => (v.kind === 'model' ? `#/m/${encodeURIComponent(v.id)}` : v.kind === 'standard' ? '#/standard' : '#/');
 
 export default function App() {
   const { data, state, dispatch, refresh } = useWorkspace();
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [view, setView] = useState<View>({ kind: 'overview' });
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showDrawer, setShowDrawer] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const selectedModel = data.models.find((m) => m.id === selectedModelId) ?? null;
+  useEffect(() => {
+    const sync = () => setView(readHash());
+    sync();
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
 
-  const handleAddModel = (model: Model) => {
-    const { id, name, color, titleTemplate, bodyTemplate } = model;
-    dispatch({ type: 'upsertModel', model: { id, name, color, titleTemplate, bodyTemplate } });
-    setSelectedModelId(model.id);
-  };
+  const navigate = useCallback((v: View) => {
+    window.location.hash = toHash(v);
+    setView(v);
+    document.getElementById('main')?.scrollTo(0, 0);
+  }, []);
 
-  const handleDeleteModel = (id: string) => {
-    dispatch({ type: 'deleteModel', modelId: id });
-    setSelectedModelId((prev) => (prev === id ? null : prev));
-  };
+  const model = view.kind === 'model' ? data.models.find((m) => m.id === view.id) ?? null : null;
 
   if (state === 'loading') {
     return (
-      <div className="h-screen flex items-center justify-center bg-white dark:bg-gray-950">
-        <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+      <div className="h-screen flex items-center justify-center">
+        <div className="w-5 h-5 border-2 border-muted border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
+    <div className="h-screen flex">
       <Toaster
-        position="bottom-right"
+        position="bottom-center"
         toastOptions={{
-          className: '!bg-white dark:!bg-gray-800 !text-gray-900 dark:!text-white !border !border-gray-200 dark:!border-gray-700 !shadow-lg !rounded-xl !text-sm',
-          duration: 2500,
+          className: '!bg-ink !text-panel !text-[13.5px] !rounded-lg !shadow-xl',
+          duration: 3000,
         }}
       />
 
-      <Topbar onMenuToggle={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} syncState={state} />
-
-      <ImportBanner
-        onImport={async (models) => {
-          dispatch({ type: 'import', models });
-          setTimeout(refresh, 1500);
-        }}
+      <Sidebar
+        models={data.models}
+        standardCount={data.standard.length}
+        view={view}
+        onNavigate={navigate}
+        onAddModel={() => setShowAddModal(true)}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        syncState={state}
       />
 
-      <div className="flex flex-1 min-h-0">
-        <Sidebar
-          models={data.models}
-          selectedId={selectedModelId}
-          onSelect={setSelectedModelId}
-          onAddModel={() => setShowAddModal(true)}
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* mobile header */}
+        <div className="lg:hidden h-12 shrink-0 flex items-center gap-2 px-3 border-b border-line bg-panel">
+          <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-md text-muted hover:text-ink" aria-label="Open menu">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M3 5h12M3 9h12M3 13h12" /></svg>
+          </button>
+          <span className="font-semibold truncate">{model?.name ?? (view.kind === 'standard' ? 'Standard subreddits' : 'Reddit Poster')}</span>
+        </div>
+
+        <ImportBanner
+          onImport={async (models) => {
+            dispatch({ type: 'import', models });
+            setTimeout(refresh, 1500);
+          }}
         />
 
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <MainPanel
-            model={selectedModel}
-            onMarkPosted={(subredditId) =>
-              dispatch({ type: 'markPosted', subredditId, at: new Date().toISOString() })
-            }
-            onRemoveSubreddit={(modelId, subredditId) =>
-              dispatch({ type: 'removeSubreddit', modelId, subredditId })
-            }
-            onOpenSettings={() => setShowDrawer(true)}
-          />
+        <main id="main" className="flex-1 overflow-y-auto">
+          {view.kind === 'model' && model && (
+            <ModelView key={model.id} model={model} posts={data.posts} standard={data.standard} dispatch={dispatch} onDeleted={() => navigate({ kind: 'overview' })} />
+          )}
+          {view.kind === 'model' && !model && (
+            <div className="p-10 text-muted">This model was deleted or doesn’t exist.</div>
+          )}
+          {view.kind === 'standard' && <StandardView data={data} dispatch={dispatch} />}
+          {view.kind === 'overview' && (
+            <Overview data={data} onOpen={(id) => navigate({ kind: 'model', id })} onAddModel={() => setShowAddModal(true)} />
+          )}
         </main>
       </div>
 
-      {showAddModal && <AddModelModal onAdd={handleAddModel} onClose={() => setShowAddModal(false)} />}
-
-      {showDrawer && selectedModel && (
-        <ModelDrawer
-          model={selectedModel}
-          onSaveSettings={(model) => dispatch({ type: 'upsertModel', model })}
-          onAddSubreddits={(modelId, subreddits) => dispatch({ type: 'addSubreddits', modelId, subreddits })}
-          onDelete={handleDeleteModel}
-          onClose={() => setShowDrawer(false)}
+      {showAddModal && (
+        <AddModelModal
+          standard={data.standard}
+          onClose={() => setShowAddModal(false)}
+          onCreate={(settings, subs) => {
+            dispatch({ type: 'upsertModel', model: settings });
+            if (subs.length) dispatch({ type: 'addSubreddits', modelId: settings.id, subreddits: subs });
+            navigate({ kind: 'model', id: settings.id });
+          }}
         />
       )}
     </div>
